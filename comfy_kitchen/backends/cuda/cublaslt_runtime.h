@@ -164,6 +164,30 @@ private:
             return;
         }
 
+        // Confirm the major of what we attached to. Binding by soname trusts a
+        // file name, and every symbol above exists in 12.x as well, so a symlink
+        // or an LD_PRELOAD that puts a 12.x under the 13 name would otherwise
+        // bind silently. cublasLtGetVersion is major*10000 + minor*100 + patch.
+#ifdef _WIN32
+        auto get_version = reinterpret_cast<size_t (*)()>(
+            GetProcAddress(static_cast<HMODULE>(handle_), "cublasLtGetVersion"));
+#else
+        auto get_version = reinterpret_cast<size_t (*)()>(
+            dlsym(handle_, "cublasLtGetVersion"));
+#endif
+        if (!get_version) {
+            error_message_ = "cuBLASLt does not export cublasLtGetVersion";
+            unload();
+            return;
+        }
+        size_t version = get_version();
+        if (version / 10000 < 13) {
+            error_message_ = "the cuBLASLt in this process is version " +
+                             std::to_string(version) + ", 13.0 or newer is required";
+            unload();
+            return;
+        }
+
         available_ = true;
     }
 
