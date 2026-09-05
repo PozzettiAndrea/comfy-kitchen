@@ -232,13 +232,13 @@ if(WIN32)
     target_link_directories(_C PRIVATE ${Python_LIBRARY_DIRS})
 endif()
 
-# Set RPATH for runtime library loading
-if(UNIX AND NOT APPLE)
-    set_target_properties(_C PROPERTIES
-        INSTALL_RPATH "$ORIGIN:${CUDAToolkit_LIBRARY_DIR}"
-        BUILD_RPATH "${CUDAToolkit_LIBRARY_DIR}"
-    )
-endif()
+# No RUNPATH on purpose. _C has no NEEDED CUDA library (cudart is static,
+# cuBLASLt is attached at runtime to the copy PyTorch or nvidia.cu13 already
+# loaded), so there is nothing for $ORIGIN or a toolkit directory to serve.
+# setup.py runs cmake --build only, never the install step, so any BUILD_RPATH
+# set here is what ships in the wheel; the old toolkit dir baked the build
+# host's CUDA path into every wheel, and CMake's ':' padding of the build rpath
+# added empty entries that glibc resolves as the current working directory.
 
 # Fix multi-config generator output directory issue
 # By default, multi-config generators put output in Release/Debug subdirectories

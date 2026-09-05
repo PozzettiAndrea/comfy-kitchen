@@ -166,6 +166,8 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
+          import subprocess
+          import tempfile
           import zipfile
           from pathlib import Path
 
@@ -181,17 +183,31 @@ jobs:
                   raise SystemExit(f"{wheel.name}: cp312 wheel lost its abi3 tag (got {abitag})")
               with zipfile.ZipFile(wheel) as zf:
                   names = zf.namelist()
-              has_cuda = any(
-                  name.startswith("comfy_kitchen/backends/cuda/_C") and name.endswith(".so")
-                  for name in names
-              )
-              has_hip = any(
-                  name.startswith("comfy_kitchen/backends/hip/_C") and name.endswith(".so")
-                  for name in names
-              )
-              print(f"{wheel.name}: cuda={has_cuda} hip={has_hip}")
-              if not has_cuda or not has_hip:
-                  raise SystemExit(f"{wheel.name} does not contain both CUDA and HIP extensions")
+                  cuda_members = [
+                      name for name in names
+                      if name.startswith("comfy_kitchen/backends/cuda/_C") and name.endswith(".so")
+                  ]
+                  has_hip = any(
+                      name.startswith("comfy_kitchen/backends/hip/_C") and name.endswith(".so")
+                      for name in names
+                  )
+                  print(f"{wheel.name}: cuda={bool(cuda_members)} hip={has_hip}")
+                  if not cuda_members or not has_hip:
+                      raise SystemExit(f"{wheel.name} does not contain both CUDA and HIP extensions")
+                  # The CUDA extension attaches to the cuBLASLt PyTorch already loaded
+                  # and has no NEEDED CUDA library, so it must ship without any
+                  # RUNPATH: a build-host toolkit dir there would leak into the wheel,
+                  # and an empty entry (CMake ':' padding) is the current directory.
+                  with tempfile.TemporaryDirectory() as tmp:
+                      for member in cuda_members:
+                          path = zf.extract(member, tmp)
+                          dyn = subprocess.run(
+                              ["readelf", "-d", path], check=True, capture_output=True, text=True
+                          ).stdout
+                          bad = [line for line in dyn.splitlines() if "RUNPATH" in line or "RPATH" in line]
+                          if bad:
+                              raise SystemExit(f"{wheel.name}: {member} carries a runtime search path: {bad}")
+                          print(f"{wheel.name}: {member} has no RUNPATH")
           PY
 
       - name: Build CPU-only wheel (py3-none-any)
