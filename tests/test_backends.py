@@ -55,10 +55,14 @@ class TestBackendSystem:
         assert "quantize_int8_rowwise" in eager_caps
         assert "dequantize_int8_simple" in eager_caps
 
-        # Check cuda (if available)
+        # Check cuda (if available): int8_linear needs cuBLASLt 13, which the
+        # extension only binds to when torch (or nvidia.cu13) already loaded it,
+        # so assert consistency with the flag rather than presence.
         if backends["cuda"]["available"]:
+            from comfy_kitchen.backends.cuda import _C
+
             cuda_caps = backends["cuda"]["capabilities"]
-            assert "int8_linear" in cuda_caps
+            assert ("int8_linear" in cuda_caps) == bool(getattr(_C, "HAS_CUBLASLT", False))
 
     def test_backend_context_manager_override(self, small_tensor):
         """Test that use_backend context manager correctly overrides backend selection."""

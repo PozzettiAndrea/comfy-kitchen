@@ -3975,7 +3975,10 @@ NB_MODULE(_C, m) {
           nb::arg("dtype_code"),
           nb::arg("stream_ptr"));
 
-    // Feature availability flag (computed at module load time)
+    // Feature availability flag (computed at module load time): true iff a
+    // cuBLASLt 13 was already mapped in this process (by PyTorch cu130 or the
+    // Python-side nvidia.cu13 preload) and its symbols resolved. Nothing is
+    // loaded from disk here; see CublasLtRuntime::load().
     m.attr("HAS_CUBLASLT") = comfy::CublasLtRuntime::instance().is_available();
 
     m.attr("__nanobind__") = true;

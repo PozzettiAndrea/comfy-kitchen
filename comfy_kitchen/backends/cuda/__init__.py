@@ -214,6 +214,8 @@ from comfy_kitchen.tensor.int8_utils import (  # noqa: E402
     _rotate_weight,
 )
 
+# HAS_CUBLASLT: a cuBLASLt 13 was already mapped in this process when _C loaded
+# (by torch cu130, or by the nvidia.cu13 preload above). _C never loads one itself.
 _CUBLASLT_AVAILABLE = _EXT_AVAILABLE and getattr(_C, "HAS_CUBLASLT", False)
 _cublas_workspaces: dict[int, torch.Tensor] = {}
 _empty_cuda_tensors: dict[tuple[str, int | None, torch.dtype], torch.Tensor] = {}
