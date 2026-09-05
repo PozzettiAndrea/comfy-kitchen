@@ -131,38 +131,29 @@ private:
         if (load_attempted_) return;
         load_attempted_ = true;
 
+        // Attach to the cuBLASLt already mapped in this process. Never search:
+        // a library on RUNPATH, LD_LIBRARY_PATH, ld.so.cache or PATH is not ours
+        // and can be a different major than the torch in the process.
 #ifdef _WIN32
-        // Windows: cuBLAS 13.x (CUDA 13+)
-        const char* lib_names[] = {
-            "cublasLt64_13.dll",
-            "cublasLt64.dll",       // Fallback (may be 13.x)
-            nullptr
-        };
-        
-        for (const char** name = lib_names; *name != nullptr; ++name) {
-            handle_ = LoadLibraryA(*name);
-            if (handle_) break;
+        // GetModuleHandleEx with flags 0 returns the loaded module (never loads
+        // from disk) and bumps its refcount so FreeLibrary in unload() balances.
+        HMODULE module = nullptr;
+        if (GetModuleHandleExA(0, "cublasLt64_13.dll", &module)) {
+            handle_ = module;
         }
-        
         if (!handle_) {
-            error_message_ = "cuBLASLt 13.x library not found (requires CUDA 13+)";
+            error_message_ = "cublasLt64_13.dll is not loaded in this process "
+                             "(needs a cu130 or newer PyTorch)";
             return;
         }
 #else
-        // Linux: cuBLAS 13.x (CUDA 13+)
-        const char* lib_names[] = {
-            "libcublasLt.so.13",
-            "libcublasLt.so",       // Fallback (may be 13.x)
-            nullptr
-        };
-        
-        for (const char** name = lib_names; *name != nullptr; ++name) {
-            handle_ = dlopen(*name, RTLD_NOW | RTLD_GLOBAL);
-            if (handle_) break;
-        }
-        
+        // RTLD_NOLOAD returns the object already loaded, matched by SONAME, so a
+        // copy loaded by absolute path is found; it never maps a new one. Every
+        // symbol goes through dlsym below, so RTLD_LAZY and RTLD_LOCAL suffice.
+        handle_ = dlopen("libcublasLt.so.13", RTLD_LAZY | RTLD_NOLOAD);
         if (!handle_) {
-            error_message_ = std::string("cuBLASLt 13.x library not found (requires CUDA 13+): ") + dlerror();
+            error_message_ = "libcublasLt.so.13 is not loaded in this process "
+                             "(needs a cu130 or newer PyTorch, or pip install comfy-kitchen[cublas])";
             return;
         }
 #endif
