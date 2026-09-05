@@ -166,6 +166,8 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
+          import subprocess
+          import tempfile
           import zipfile
           from pathlib import Path
 
@@ -192,6 +194,26 @@ jobs:
               print(f"{wheel.name}: cuda={has_cuda} hip={has_hip}")
               if not has_cuda or not has_hip:
                   raise SystemExit(f"{wheel.name} does not contain both CUDA and HIP extensions")
+
+              # The CUDA extension has no NEEDED CUDA library, so nothing needs a
+              # runtime search path. An absolute entry would be the build host's
+              # toolkit dir and an empty one resolves as the current directory.
+              with zipfile.ZipFile(wheel) as zf, tempfile.TemporaryDirectory() as tmp:
+                  for name in names:
+                      if not (name.startswith("comfy_kitchen/backends/cuda/_C") and name.endswith(".so")):
+                          continue
+                      dynamic = subprocess.run(
+                          ["readelf", "-d", zf.extract(name, tmp)],
+                          check=True, capture_output=True, text=True,
+                      ).stdout
+                      for line in dynamic.splitlines():
+                          if "(RUNPATH)" not in line and "(RPATH)" not in line:
+                              continue
+                          entries = line.rpartition("[")[2].partition("]")[0].split(":")
+                          bad = [entry for entry in entries if not entry or entry.startswith("/")]
+                          if bad:
+                              raise SystemExit(f"{wheel.name}: {name} has runtime search path entries {bad}")
+                      print(f"{wheel.name}: {name} runtime search path is clean")
           PY
 
       - name: Build CPU-only wheel (py3-none-any)
